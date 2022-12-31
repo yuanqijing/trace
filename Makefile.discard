@@ -1,0 +1,74 @@
+.PHONY: get-NET_SYSCALLS := socket|setsockopt|getsockopt|bind|listen|accept|connect|recvfrom|recvmsg|sendto|sethostname|write|read|close
+
+get-apps: ## Get all buildable apps
+	@for app in $(shell ls cmd); do \
+		echo $$app; \
+	done
+
+.PHONY: build
+build: ## Build the binary
+	@echo BUILD_TARGET=$(BUILD_TARGET)
+	@if [ "$(BUILD_TARGET)" != "all" ]; then \
+    	echo "Building $(BUILD_TARGET)"; \
+    	make build-app APP=$(BUILD_TARGET); \
+    else \
+		for app in $(shell ls cmd); do \
+			echo "Building $$app"; \
+			make build-app APP=$$app; \
+		done; \
+	fi
+
+.PHONY: build-app
+APP ?= $(BUILD_TARGET)
+build-app: ## Build the binary
+	@if [ -d "cmd/$(APP)" ]; then \
+		for os in $(OS_LIST); do \
+			for arch in $(ARCH_LIST); do \
+				echo "Building for $$os/$$arch... app: $(APP)"; \
+				mkdir -p bin/$$os/$$arch; \
+				GOOS=$$os GOARCH=$$arch go build -o bin/$$os/$$arch/$(APP) ./cmd/$(APP); \
+			done; \
+		done; \
+	else \
+		echo "App $(APP) not found"; \
+	fi
+
+
+
+.PHONY: run
+run: ## Run the binary
+	@for app in $(shell ls cmd); do \
+		echo "Running $$app..., OS: $(OS), ARCH: $(ARCH)"; \
+		bin/$(OS)/$(ARCH)/$$app; \
+	done
+
+.PHONY: run-strace
+run-strace: ## Run the binary with strace
+	@for app in $(shell ls cmd); do \
+		echo "Running $$app..., OS: $(OS), ARCH: $(ARCH)"; \
+		mkdir -p output/strace/$(OS)/$(ARCH); \
+		strace -f -o output/strace/$(OS)/$(ARCH)/$$app.log bin/$(OS)/$(ARCH)/$$app; \
+		echo "Output: output/strace/$(OS)/$(ARCH)/$$app.log"; \
+	done
+
+.PHONY: run-trace-cmd
+run-trace-cmd: ## Run the binary with trace-cmd (requires sudo) to get all trace_points
+	@for app in $(shell ls cmd); do \
+		echo "Running $$app..., OS: $(OS), ARCH: $(ARCH)"; \
+		mkdir -p output/trace-cmd/$(OS)/$(ARCH); \
+		trace-cmd record -o output/trace-cmd/$(OS)/$(ARCH)/$$app.log -p function_graph --max-graph-depth 1 -e syscalls bin/$(OS)/$(ARCH)/$$app; \
+		echo "Output: output/trace-cmd/$(OS)/$(ARCH)/$$app.log"; \
+	done
+
+.PHONY: analyze-net-syscalls
+analyze-net-syscalls: ## Analyze net syscalls
+	@for app in $(shell ls cmd); do \
+		echo "Analyzing $$app..., OS: $(OS), ARCH: $(ARCH)"; \
+		if [ -f "output/strace/$(OS)/$(ARCH)/$$app.log" ]; then \
+			mkdir -p output/strace/$(OS)/$(ARCH)/$$app; \
+			grep -E "$(NET_SYSCALLS)" output/strace/$(OS)/$(ARCH)/$$app.log > output/strace/$(OS)/$(ARCH)/$$app/net.log; \
+			echo "Output: output/strace/$(OS)/$(ARCH)/$$app/net.log"; \
+		else \
+			echo "Log file not found: output/strace/$(OS)/$(ARCH)/$$app.log"; \
+		fi; \
+	done

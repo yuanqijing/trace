@@ -1,4 +1,19 @@
-NET_SYSCALLS := socket|setsockopt|getsockopt|bind|listen|accept|connect|recvfrom|recvmsg|sendto|sethostname|write|read|close
+# Get the OS information from the system
+OS := $(shell uname -s | tr A-Z a-z)
+OS_LIST := linux darwin
+
+ARCH := $(shell uname -m | sed 's/x86_64/amd64/')  # get current arch (replace x86_64 with amd64)
+ARCH_LIST := amd64
+
+# Clang version to use for building the eBPF programs.
+CLANG ?= clang-12
+CFLAGS := -O2 -g -Wall -Werror $(CFLAGS)
+
+# Obtain an absolute path to the directory of the Makefile.
+# Assume the Makefile is in the root of the repository.
+REPODIR := $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
+UIDGID := $(shell stat -c '%u:%g' ${REPODIR})
+
 
 ##@ Help
 .PHONY: help
@@ -6,92 +21,68 @@ help: ## Display this help screen
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
 ##@ Build
-BUILD_TARGET ?= all
-
-OS := $(shell uname -s | tr A-Z a-z)
-OS_LIST := linux darwin
-
-# get current arch (replace x86_64 with amd64)
-ARCH := $(shell uname -m | sed 's/x86_64/amd64/')
-ARCH_LIST := amd64
-
-.PHONY: get-apps
-get-apps: ## Get all buildable apps
-	@for app in $(shell ls cmd); do \
-		echo $$app; \
-	done
-
-.PHONY: build
-build: ## Build the binary
-	@echo BUILD_TARGET=$(BUILD_TARGET)
-	@if [ "$(BUILD_TARGET)" != "all" ]; then \
-    	echo "Building $(BUILD_TARGET)"; \
-    	make build-app APP=$(BUILD_TARGET); \
-    else \
-		for app in $(shell ls cmd); do \
-			echo "Building $$app"; \
-			make build-app APP=$$app; \
-		done; \
-	fi
-
-.PHONY: build-app
-APP ?= $(BUILD_TARGET)
-build-app: ## Build the binary
-	@if [ -d "cmd/$(APP)" ]; then \
-		for os in $(OS_LIST); do \
-			for arch in $(ARCH_LIST); do \
-				echo "Building for $$os/$$arch... app: $(APP)"; \
-				mkdir -p bin/$$os/$$arch; \
-				GOOS=$$os GOARCH=$$arch go build -o bin/$$os/$$arch/$(APP) ./cmd/$(APP); \
-			done; \
-		done; \
-	else \
-		echo "App $(APP) not found"; \
-	fi
+.PHONY: docker-dev
+docker-dev: ## Enter a docker build development environment
+	docker run -it --rm \
+		-v ${REPODIR}:/ebpf -w /ebpf \
+		--env MAKEFLAGS \
+		--env CFLAGS="-fdebug-prefix-map=/ebpf=." \
+		--env HOME="/tmp" \
+		${BUILDER_IMAGE_FULL_NAME} \
+		/bin/bash
 
 .PHONY: clean
 clean: ## Clean the binary
 	@rm -rf bin
 
+##@ Go
+.PHONY: deps
+deps: ## Download dependencies
+	@go mod tidy
+	@go mod vendor
+
+.PHONY: generate
+generate: export BPF_CLANG := $(CLANG)
+generate: export BPF_CFLAGS := $(CFLAGS)
+generate: ## Generate code
+	@cd pkg/ebpf && go generate ./...
+
+
+##@ Docker
+ALI_REGISTRY ?= registry.cn-hangzhou.aliyuncs.com
+ALI_REGISTRY_NAMESPACE ?= pandora-io
+ALI_REGISTRY_USER ?= "qijing89760"
+ALI_REGISTRY_PASSWORD ?= "pandora12345"
+
+IMAGE_NAME ?= tracer
+IMAGE_TAG ?= $(GitCommit)
+BUILDER_IMAGE_NAME ?= tracer-builder
+BUILDER_IMAGE_TAG ?= v1.0.0
+
+TRACER_IMAGE_FULL_NAME ?= $(ALI_REGISTRY)/$(ALI_REGISTRY_NAMESPACE)/$(IMAGE_NAME):$(IMAGE_TAG)
+BUILDER_IMAGE_FULL_NAME ?= $(ALI_REGISTRY)/$(ALI_REGISTRY_NAMESPACE)/$(BUILDER_IMAGE_NAME):$(BUILDER_IMAGE_TAG)
+
+.PHONY: login
+login: ## Login to the registry
+	@docker login -u $(ALI_REGISTRY_USER) -p $(ALI_REGISTRY_PASSWORD) $(ALI_REGISTRY)
+
+.PHONY: push
+push: login ## Push the tracer & builder image to the registry
+	@docker push $(TRACER_IMAGE_FULL_NAME) && docker push $(BUILDER_IMAGE_FULL_NAME)
+
+.PHONY: build-tracer
+build-tracer: ## Build the docker image
+	@docker build -t $(TRACER_IMAGE_FULL_NAME) .
+
+.PHONY: build-builder
+build-builder: ## build or download the builder.
+	@if [ -z "$(shell docker images -q $(BUILDER_IMAGE_NAME))" ]; then \
+  		cd builder/docker && docker build -t $(BUILDER_IMAGE_NAME) .; \
+	fi;\
+	echo "builder image is ready."
+
 ##@ Run
-.PHONY: run
-run: ## Run the binary
-	@for app in $(shell ls cmd); do \
-		echo "Running $$app..., OS: $(OS), ARCH: $(ARCH)"; \
-		bin/$(OS)/$(ARCH)/$$app; \
-	done
 
-.PHONY: run-strace
-run-strace: ## Run the binary with strace
-	@for app in $(shell ls cmd); do \
-		echo "Running $$app..., OS: $(OS), ARCH: $(ARCH)"; \
-		mkdir -p output/strace/$(OS)/$(ARCH); \
-		strace -f -o output/strace/$(OS)/$(ARCH)/$$app.log bin/$(OS)/$(ARCH)/$$app; \
-		echo "Output: output/strace/$(OS)/$(ARCH)/$$app.log"; \
-	done
-
-.PHONY: run-trace-cmd
-run-trace-cmd: ## Run the binary with trace-cmd (requires sudo) to get all trace_points
-	@for app in $(shell ls cmd); do \
-		echo "Running $$app..., OS: $(OS), ARCH: $(ARCH)"; \
-		mkdir -p output/trace-cmd/$(OS)/$(ARCH); \
-		trace-cmd record -o output/trace-cmd/$(OS)/$(ARCH)/$$app.log -p function_graph --max-graph-depth 1 -e syscalls bin/$(OS)/$(ARCH)/$$app; \
-		echo "Output: output/trace-cmd/$(OS)/$(ARCH)/$$app.log"; \
-	done
-
-
-.PHONY: analyze-net-syscalls
-analyze-net-syscalls: ## Analyze net syscalls
-	@for app in $(shell ls cmd); do \
-		echo "Analyzing $$app..., OS: $(OS), ARCH: $(ARCH)"; \
-		if [ -f "output/strace/$(OS)/$(ARCH)/$$app.log" ]; then \
-			mkdir -p output/strace/$(OS)/$(ARCH)/$$app; \
-			grep -E "$(NET_SYSCALLS)" output/strace/$(OS)/$(ARCH)/$$app.log > output/strace/$(OS)/$(ARCH)/$$app/net.log; \
-			echo "Output: output/strace/$(OS)/$(ARCH)/$$app/net.log"; \
-		else \
-			echo "Log file not found: output/strace/$(OS)/$(ARCH)/$$app.log"; \
-		fi; \
-	done
 
 ##@ Vagrant
 VAGRANT_BOX ?= "generic/ubuntu2204"
