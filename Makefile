@@ -1,3 +1,5 @@
+NET_SYSCALLS := socket|setsockopt|getsockopt|bind|listen|accept|connect|recvfrom|recvmsg|sendto|sethostname|write|read|close
+
 ##@ Help
 .PHONY: help
 help: ## Display this help screen
@@ -66,6 +68,29 @@ run-strace: ## Run the binary with strace
 		mkdir -p output/strace/$(OS)/$(ARCH); \
 		strace -f -o output/strace/$(OS)/$(ARCH)/$$app.log bin/$(OS)/$(ARCH)/$$app; \
 		echo "Output: output/strace/$(OS)/$(ARCH)/$$app.log"; \
+	done
+
+.PHONY: run-trace-cmd
+run-trace-cmd: ## Run the binary with trace-cmd (requires sudo) to get all trace_points
+	@for app in $(shell ls cmd); do \
+		echo "Running $$app..., OS: $(OS), ARCH: $(ARCH)"; \
+		mkdir -p output/trace-cmd/$(OS)/$(ARCH); \
+		trace-cmd record -o output/trace-cmd/$(OS)/$(ARCH)/$$app.log -p function_graph --max-graph-depth 1 -e syscalls bin/$(OS)/$(ARCH)/$$app; \
+		echo "Output: output/trace-cmd/$(OS)/$(ARCH)/$$app.log"; \
+	done
+
+
+.PHONY: analyze-net-syscalls
+analyze-net-syscalls: ## Analyze net syscalls
+	@for app in $(shell ls cmd); do \
+		echo "Analyzing $$app..., OS: $(OS), ARCH: $(ARCH)"; \
+		if [ -f "output/strace/$(OS)/$(ARCH)/$$app.log" ]; then \
+			mkdir -p output/strace/$(OS)/$(ARCH)/$$app; \
+			grep -E "$(NET_SYSCALLS)" output/strace/$(OS)/$(ARCH)/$$app.log > output/strace/$(OS)/$(ARCH)/$$app/net.log; \
+			echo "Output: output/strace/$(OS)/$(ARCH)/$$app/net.log"; \
+		else \
+			echo "Log file not found: output/strace/$(OS)/$(ARCH)/$$app.log"; \
+		fi; \
 	done
 
 ##@ Vagrant
