@@ -1,0 +1,29 @@
+##@ Vagrant
+# Path: Makefile.vagrant
+
+VAGRANT_BOX ?= "generic/ubuntu2204"
+
+.PHONY: vagrant-up
+vagrant-up: ## Start the vagrant box
+	@sed 's|config.vm.box = ".*"|config.vm.box = $(VAGRANT_BOX)|' Vagrantfile > Vagrantfile.tmp && mv Vagrantfile.tmp Vagrantfile
+	vagrant up
+
+.PHONY: vagrant-reload
+vagrant-reload: ## Reload the vagrant box
+	vagrant reload
+
+.PHONY: vagrant-ssh
+vagrant-ssh: ## SSH into the vagrant box, password: vagrant
+	vagrant ssh -c "su"
+
+.PHONY: vagrant-stop
+vagrant-stop: ## Stop the vagrant box
+	vagrant halt
+
+.PHONY: vagrant-destroy
+vagrant-destroy: ## Destroy the vagrant box
+	vagrant destroy
+
+.PHONY: vagrant-rm-box
+vagrant-rm-box: ## Remove the vagrant box
+	vagrant box remove $(VAGRANT_BOX)

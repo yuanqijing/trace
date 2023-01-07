@@ -1,0 +1,34 @@
+##@ Docker
+
+ALI_REGISTRY ?= registry.cn-hangzhou.aliyuncs.com
+ALI_REGISTRY_NAMESPACE ?= pandora-io
+ALI_REGISTRY_USER ?= "qijing89760"
+ALI_REGISTRY_PASSWORD ?= "pandora12345"
+
+IMAGE_NAME ?= tracer
+BUILDER_IMAGE_NAME ?= tracer-builder
+
+IMAGE_TAG ?= $(shell git rev-parse --short HEAD)
+BUILDER_IMAGE_TAG ?= v1.0.0
+
+TRACER_IMAGE_FULL_NAME ?= $(ALI_REGISTRY)/$(ALI_REGISTRY_NAMESPACE)/$(IMAGE_NAME):$(IMAGE_TAG)
+BUILDER_IMAGE_FULL_NAME ?= $(ALI_REGISTRY)/$(ALI_REGISTRY_NAMESPACE)/$(BUILDER_IMAGE_NAME):$(BUILDER_IMAGE_TAG)
+
+.PHONY: login
+login: ## Login to the registry
+	@docker login -u $(ALI_REGISTRY_USER) -p $(ALI_REGISTRY_PASSWORD) $(ALI_REGISTRY)
+
+.PHONY: push
+push: login ## Push the tracer & builder image to the registry
+	@docker push $(TRACER_IMAGE_FULL_NAME) && docker push $(BUILDER_IMAGE_FULL_NAME)
+
+.PHONY: build-tracer
+build-tracer: ## Build the docker image
+	@docker build -t $(TRACER_IMAGE_FULL_NAME) .
+
+.PHONY: build-builder
+build-builder: ## build or download the builder.
+	@if [ -z "$(shell docker images -q $(BUILDER_IMAGE_NAME))" ]; then \
+  		cd builder/docker && docker build -t $(BUILDER_IMAGE_NAME) .; \
+	fi;\
+	echo "builder image is ready."

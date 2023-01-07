@@ -19,6 +19,6 @@ RUN apt-get update && \
     make git \
     clang-7 llvm-7 \
     clang-9 llvm-9 \
-    clang-12 llvm-12 && \
+    clang-13 llvm-13 && \
     rm -rf /var/lib/apt/lists/*
 
