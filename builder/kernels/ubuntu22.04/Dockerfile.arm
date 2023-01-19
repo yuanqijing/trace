@@ -1,0 +1,15 @@
+# arm env for ebpf development
+FROM Ubuntu:22.04
+
+# install utilities
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    iputils-ping \
+    net-tools \
+    telnet \
+    vim \
+    dnsutils \
+    openssh-client \
+    && apt-get clean
+
