@@ -17,8 +17,10 @@ COPY llvm.list /etc/apt/sources.list.d
 RUN apt-get update && \
     apt-get -y --no-install-recommends install \
     make git \
+    clang-format \
     clang-7 llvm-7 \
     clang-9 llvm-9 \
-    clang-13 llvm-13 && \
+    clang-14 llvm-14 && \
     rm -rf /var/lib/apt/lists/*
 
+RUN GOBIN=/usr/local/bin go install golang.org/x/tools/cmd/stringer@latest && rm -rf /go/pkg

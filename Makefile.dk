@@ -28,7 +28,7 @@ build-tracer: ## Build the docker image
 
 .PHONY: build-builder
 build-builder: ## build or download the builder.
-	@if [ -z "$(shell docker images -q $(BUILDER_IMAGE_NAME))" ]; then \
-  		cd builder/docker && docker build -t $(BUILDER_IMAGE_NAME) .; \
+	@if [ -z "$(shell docker images -q $(BUILDER_IMAGE_FULL_NAME))" ]; then \
+  		cd builder/compiler && docker build -t $(BUILDER_IMAGE_FULL_NAME) .; \
 	fi;\
 	echo "builder image is ready."

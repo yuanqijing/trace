@@ -6,7 +6,7 @@ ARCH := $(shell uname -m | sed 's/x86_64/amd64/')
 ARCH_LIST := amd64
 
 # Clang version to use for building the eBPF programs.
-CLANG ?= clang-13
+CLANG ?= clang-14
 CFLAGS := -O2 -g -Wall -Werror $(CFLAGS)
 
 # Obtain an absolute path to the directory of the Makefile.
@@ -45,7 +45,7 @@ deps: ## Download dependencies
 generate: export BPF_CLANG := $(CLANG)
 generate: export BPF_CFLAGS := $(CFLAGS)
 generate: ## Generate code
-	@cd pkg/ebpf && go generate ./...
+	@cd pkg/ && go generate ./...
 
 .PHONY: build
 build: ## Build the binary
@@ -57,20 +57,20 @@ DEV_ENV_IMAGE_FULL_NAME ?= "ubuntu:22.04"
 
 .PHONY: dev-env
 dev-env: ## Enter a docker development environment
-	@if [ -z "$(shell docker ps -a -q -f name=ebpf-dev-arm)" ]; then \
+	@if [ -z "$(shell docker ps -a -q -f name=ebpf-dev-amd)" ]; then \
 		docker run -it \
-			--name ebpf-dev-arm \
+			--name ebpf-dev-amd \
 			--privileged \
-			--net=host \
+			-p 6060:6060 \
 			-v ${REPODIR}:/root/ebpf \
 			-w /root/ebpf \
 			${DEV_ENV_IMAGE_FULL_NAME} \
 			/bin/bash; \
 	else \
-		if [ -n "$(shell docker ps -q -f name=ebpf-dev-arm)" ]; then \
-			docker exec -it ebpf-dev-arm /bin/bash; \
+		if [ -n "$(shell docker ps -q -f name=ebpf-dev-amd)" ]; then \
+			docker exec -it ebpf-dev-amd /bin/bash; \
 		else \
-			docker start -i ebpf-dev-arm; \
+			docker start -i ebpf-dev-amd; \
 		fi \
 	fi
 
